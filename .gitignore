@@ -1,0 +1,20 @@
+.idea
+.vscode
+node_modules
+lib
+yarn-error.log
+package-lock.json
+coverage
+
+# Local credentials and secret files
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*credentials*
+*.token
+*.secret
