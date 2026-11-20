@@ -14,6 +14,7 @@
 
 import { InternalEnforcer } from './internalEnforcer';
 import { MatchingFunction } from './model';
+import { RevocationDiagnostic } from './revocation';
 
 /**
  * ManagementEnforcer = InternalEnforcer + Management API.
@@ -369,6 +370,25 @@ export class ManagementEnforcer extends InternalEnforcer {
    */
   public async removeNamedPolicy(ptype: string, ...params: string[]): Promise<boolean> {
     return this.removePolicyInternal('p', ptype, params, true);
+  }
+
+  /**
+   * revokeNamedPolicyWithDiagnostic revokes exactly one named authorization rule
+   * and returns a reviewable diagnostic instead of a bare boolean. It lets an
+   * operator distinguish a rule that never existed (PolicyNotFound), an adapter
+   * that refused the write while the previous state stays in force
+   * (AdapterWriteRejected), and a fully applied revocation (Revoked).
+   *
+   * Only the policy type, the reached stage and the result category are
+   * reported; the rule contents and user data are never echoed. The rule is
+   * matched inside the given named policy only, so two differently named
+   * policies that happen to hold identical fields are never confused.
+   *
+   * @param ptype the policy type, can be "p", "p2", "p3", ..
+   * @param rule the exact "p" policy rule to revoke.
+   */
+  public async revokeNamedPolicyWithDiagnostic(ptype: string, rule: string[]): Promise<RevocationDiagnostic> {
+    return this.removePolicyInternalWithDiagnostic('p', ptype, rule);
   }
 
   /**

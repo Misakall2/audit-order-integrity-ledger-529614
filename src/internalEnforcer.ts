@@ -16,6 +16,7 @@ import { CoreEnforcer } from './coreEnforcer';
 import { BatchAdapter } from './persist';
 import { UpdatableAdapter } from './persist';
 import { PolicyOp } from './model';
+import { RevocationDiagnostic, RevocationResultCategory, RevocationStage } from './revocation';
 
 /**
  * InternalEnforcer = CoreEnforcer + Internal API.
@@ -242,6 +243,84 @@ export class InternalEnforcer extends CoreEnforcer {
       await this.buildIncrementalRoleLinks(PolicyOp.PolicyRemove, ptype, [rule]);
     }
     return this.resortPoliciesBySubjectHierarchy(ok);
+  }
+
+  /**
+   * removePolicyInternalWithDiagnostic removes one named rule and reports, in a
+   * reviewable way, whether the rule was absent, the adapter rejected the write,
+   * or the revocation was fully applied.
+   *
+   * The diagnostic distinguishes the two "still permitted" cases an operator has
+   * to triage: the removal never reached storage (AdapterWriteRejected, in-memory
+   * state kept as the last trusted state) versus a stale decision cache after a
+   * successful write (Revoked, cache invalidated).
+   *
+   * It never throws on an adapter rejection and never echoes rule or user data;
+   * only the named policy type, the reached stage and the result category are
+   * returned.
+   */
+  protected async removePolicyInternalWithDiagnostic(sec: string, ptype: string, rule: string[]): Promise<RevocationDiagnostic> {
+    // Lookup first: a rule that is not in the model must not be reported as an
+    // update, and must not reach the adapter at all.
+    if (!this.model.hasPolicy(sec, ptype, rule)) {
+      return {
+        ptype,
+        stage: RevocationStage.Lookup,
+        category: RevocationResultCategory.PolicyNotFound,
+        applied: false,
+      };
+    }
+
+    // Persist before touching the in-memory model, so a rejected write leaves
+    // the last trusted state intact: no temporary removal can be enforced on,
+    // and no new allow decision gets cached.
+    if (this.adapter && this.autoSave) {
+      try {
+        await this.adapter.removePolicy(sec, ptype, rule);
+      } catch (e) {
+        // "not implemented" means there is no writable storage for this
+        // adapter; keep the historical tolerance of the boolean APIs.
+        if (e instanceof Error && e.message === 'not implemented') {
+          // fall through to the in-memory application
+        } else {
+          return {
+            ptype,
+            stage: RevocationStage.Persist,
+            category: RevocationResultCategory.AdapterWriteRejected,
+            applied: false,
+          };
+        }
+      }
+    }
+
+    const ok = await this.model.removePolicy(sec, ptype, rule);
+    if (sec === 'g' && ok) {
+      await this.buildIncrementalRoleLinks(PolicyOp.PolicyRemove, ptype, [rule]);
+    }
+    this.resortPoliciesBySubjectHierarchy(ok);
+
+    if (!ok) {
+      // The rule vanished between the lookup and the application; the write
+      // happened but there is nothing left to apply.
+      return {
+        ptype,
+        stage: RevocationStage.Apply,
+        category: RevocationResultCategory.PolicyNotFound,
+        applied: false,
+      };
+    }
+
+    // The removal is now authoritative. Drop cached decisions so the next
+    // authorization is re-judged against the new policy; a no-op on enforcers
+    // without a decision cache.
+    this.onPolicyChanged();
+
+    return {
+      ptype,
+      stage: RevocationStage.Apply,
+      category: RevocationResultCategory.Revoked,
+      applied: true,
+    };
   }
 
   // removePolicies removes rules from the current policy.

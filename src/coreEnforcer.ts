@@ -208,6 +208,16 @@ export class CoreEnforcer {
     this.model.clearPolicy();
   }
 
+  /**
+   * onPolicyChanged is a hook fired after a policy mutation has been applied
+   * to the in-memory model. The base enforcer has nothing to invalidate;
+   * CachedEnforcer overrides it to drop cached decisions, which is this
+   * library's cache invalidation convention.
+   */
+  protected onPolicyChanged(): void {
+    // no-op for the base enforcer
+  }
+
   public initRmMap(): void {
     this.rmMap = new Map<string, RoleManager>();
     const rm = this.model.model.get('g');

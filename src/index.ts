@@ -26,4 +26,5 @@ export * from './rbac';
 export * from './log';
 export * from './enforceContext';
 export * from './frontend';
+export * from './revocation';
 export { Util };

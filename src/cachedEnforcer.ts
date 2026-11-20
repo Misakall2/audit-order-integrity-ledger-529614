@@ -24,6 +24,15 @@ export class CachedEnforcer extends Enforcer {
     this.m = new Map<string, boolean>();
   }
 
+  // onPolicyChanged honours the library's invalidation convention: once a
+  // revocation has been applied to the model, every cached decision is dropped
+  // so the next enforce() re-judges against the new policy. A rejected write
+  // never reaches this hook, therefore no previously trusted allow entry is
+  // lost or replaced.
+  protected onPolicyChanged(): void {
+    this.invalidateCache();
+  }
+
   // setEnableCache determines whether to enable cache on e nforce(). When enableCache is enabled, cached result (true | false) will be returned for previous decisions.
   public setEnableCache(enableCache: boolean): void {
     this.enableCache = enableCache;
